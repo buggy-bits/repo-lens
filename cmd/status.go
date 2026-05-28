@@ -119,7 +119,7 @@ func checkSystem() tea.Msg {
 	}
 	defer resp.Body.Close()
 	result.ollamaOK = resp.StatusCode == 200
-
+	// TODO: Handle specific Model
 	// 2. Check models (simplified: just check if response contains model names)
 	// In MVP, we'll do a basic string check; V2 can parse JSON properly
 	// For now, assume OK if API responded
