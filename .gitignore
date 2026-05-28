@@ -1,0 +1,31 @@
+vector_store.json
+
+notes/
+
+# Binaries
+*.exe
+
+# Go build artifacts
+bin/
+build/
+
+# Dependency directories
+pkg/
+
+# IDEs and editors
+.vscode/
+
+# Environment files
+.env
+.env.*
+
+# Temporary files
+tmp/
+temp/
+
+# Air live reload
+.air/
+
+# Release artifacts
+release/
+
