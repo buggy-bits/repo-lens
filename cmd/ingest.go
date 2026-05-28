@@ -5,12 +5,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/buggy-bits/repo-lens/internal/ollama"
 	"github.com/buggy-bits/repo-lens/internal/parser"
+	"github.com/buggy-bits/repo-lens/internal/store"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
+
+const vectorStorePath = "vector_store.json"
 
 var ingestCmd = &cobra.Command{
 	Use:   "ingest [directory]",
@@ -45,7 +49,7 @@ type ingestModel struct {
 	spinner spinner.Model
 	path    string
 	status  string
-	chunks  []parser.CodeChunk
+	count   int
 	done    bool
 	err     error
 }
@@ -77,7 +81,7 @@ func (m ingestModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case ingestResult:
 		m.done = true
-		m.chunks = msg.chunks
+		m.count = msg.count
 		m.status = msg.status
 		m.err = msg.err
 		return m, tea.Quit
@@ -93,13 +97,12 @@ func (m ingestModel) View() string {
 		return fmt.Sprintf("\nIngestion failed: %v\n", m.err)
 	}
 
-	output := fmt.Sprintf("\n Ingestion Complete!\n   Path: %s\n   Chunks: %d\n", m.path, len(m.chunks))
-	parser.PrintSampleChunks(m.chunks, 2)
+	output := fmt.Sprintf("\n Ingestion Complete!\n   Path: %s\n   Chunks: %d\n", m.path, m.count)
 	return output
 }
 
 type ingestResult struct {
-	chunks []parser.CodeChunk
+	count  int
 	status string
 	err    error
 }
@@ -110,7 +113,30 @@ func runIngestion(path string) tea.Cmd {
 		if err != nil {
 			return ingestResult{err: err}
 		}
-		return ingestResult{chunks: chunks, status: "Chunking complete."}
+		if len(chunks) == 0 {
+			return ingestResult{err: fmt.Errorf("no supported files found in %s", path)}
+		}
+
+		vectorStore := &store.VectorStore{Chunks: make([]store.VectorChunk, 0, len(chunks))}
+		for i, chunk := range chunks {
+			vec, err := ollama.GetEmbedding(chunk.Content)
+			if err != nil {
+				return ingestResult{err: fmt.Errorf("failed to embed chunk %d/%d: %w", i+1, len(chunks), err)}
+			}
+			vectorStore.Chunks = append(vectorStore.Chunks, store.VectorChunk{
+				ChunkID:  chunk.ChunkID,
+				FilePath: chunk.FilePath,
+				Content:  chunk.Content,
+				Vector:   vec,
+			})
+		}
+		// Save to disk
+		if err := store.SaveStore(vectorStorePath, vectorStore); err != nil {
+			return ingestResult{err: err}
+		}
+
+		return ingestResult{count: len(vectorStore.Chunks), status: "Done"}
+
 	}
 }
 
