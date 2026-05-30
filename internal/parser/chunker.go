@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -15,13 +14,24 @@ type CodeChunk struct {
 	ChunkID  string `json:"chunk_id"`
 }
 
-// Map lookup is faster than looking throughout the array for allowed extention is present or not
+const (
+	targetChunkSize = 1500       // Target size in characters (approx 350-400 tokens)
+	overlapSize     = 300        // Overlap size in characters
+	maxFileSize     = 500 * 1024 // Skip files larger than 500KB (e.g. data, logs, lockfiles)
+)
+
 var allowedExtentions = map[string]bool{
-	".go": true, ".js": true, ".ts": true, ".py": true, ".rs": true, ".java": true,
+	".go": true, ".js": true, ".ts": true, ".jsx": true, ".tsx": true,
+	".py": true, ".rs": true, ".java": true, ".cpp": true, ".c": true,
+	".cs": true, ".php": true, ".swift": true, ".kt": true, ".dart": true,
+	".rb": true, ".pl": true, ".pm": true, ".r": true, ".jl": true,
+	".hs": true, ".erl": true, ".ex": true, ".exs": true, ".scala": true,
+	".lua": true, ".sh": true, ".bat": true, ".ps1": true,
 	".md": true, ".txt": true, ".json": true, ".yaml": true, ".yml": true,
-	".css": true, ".html": true, ".sql": true, ".sh": true,
-	".cpp": true, ".c": true, ".cs": true, ".php": true, ".swift": true, ".kt": true, ".dart": true, ".scala": true, ".lua": true,
-	".rb": true, ".pl": true, ".r": true, ".jl": true, ".hs": true, ".erl": true, ".ex": true, ".exs": true,
+	".toml": true, ".xml": true, ".html": true, ".css": true, ".scss": true,
+	".sql": true, ".graphql": true, ".gql": true, ".prisma": true,
+	".vue": true, ".svelte": true, ".env": true, ".ini": true,
+	".config": true,
 }
 
 var ignoreDirs = map[string]bool{
@@ -30,7 +40,18 @@ var ignoreDirs = map[string]bool{
 	"out": true, "bin": true, "obj": true, "target": true, "logs": true, "tmp": true, "temp": true,
 }
 
-var splitRegex = regexp.MustCompile(`(?m)^(func |class |def |export |async |interface |struct |const |let |var )`)
+var ignoreFiles = map[string]bool{
+	"package-lock.json": true,
+	"yarn.lock":         true,
+	"pnpm-lock.yaml":    true,
+	"bun.lockb":         true,
+	"go.sum":            true,
+	"cargo.lock":        true,
+	"composer.lock":     true,
+	"poetry.lock":       true,
+	"pipfile.lock":      true,
+	"gemfile.lock":      true,
+}
 
 func ChunkDirectory(rootPath string) ([]CodeChunk, error) {
 	var chunks []CodeChunk
@@ -48,14 +69,39 @@ func ChunkDirectory(rootPath string) ([]CodeChunk, error) {
 			}
 			return nil
 		}
+
+		fileName := d.Name()
+		if ignoreFiles[fileName] {
+			return nil
+		}
+
+		// Check file size
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.Size() > maxFileSize {
+			return nil
+		}
+
 		ext := strings.ToLower(filepath.Ext(path))
-		if !allowedExtentions[ext] {
+		isAllowed := allowedExtentions[ext]
+		// Handle common files without extensions
+		if !isAllowed && (fileName == "Dockerfile" || fileName == "Makefile") {
+			isAllowed = true
+		}
+
+		if !isAllowed {
 			return nil
 		}
 
 		filesProcessed++
 
 		fileContent, err := os.ReadFile(path)
+		if err != nil {
+			return nil // Skip files we cannot read
+		}
+
 		fileChunks := splitIntoChunks(string(fileContent), path)
 		chunks = append(chunks, fileChunks...)
 
@@ -69,16 +115,17 @@ func ChunkDirectory(rootPath string) ([]CodeChunk, error) {
 	return chunks, nil
 }
 
-// Split file content into chunks
-
+// splitIntoChunks splits content into chunks using a line-based sliding window.
+// This is language-agnostic, efficient, and ensures chunks do not exceed a maximum size limit.
 func splitIntoChunks(content string, filePath string) []CodeChunk {
 	var chunks []CodeChunk
 	content = strings.TrimSpace(content)
+	if content == "" {
+		return chunks
+	}
 
-	// Very Temperry chunking algorithm
-	// TODO: Should implement a good function to chunk into meaningful chunks
-
-	if len(content) < 600 {
+	// If the entire file content is within the target chunk size, keep it as a single chunk.
+	if len(content) <= targetChunkSize {
 		return append(chunks, CodeChunk{
 			FilePath: filePath,
 			Content:  content,
@@ -86,49 +133,92 @@ func splitIntoChunks(content string, filePath string) []CodeChunk {
 		})
 	}
 
-	matches := splitRegex.FindAllStringIndex(content, -1)
-	if len(matches) == 0 {
-		// Fallback: split by double newlines
-		return splitByNewlines(content, filePath)
-	}
+	lines := strings.Split(content, "\n")
+	var currentChunkLines []string
+	currentChunkLen := 0
+	chunkIdx := 0
 
-	// Create chunks between matches
-	for i, match := range matches {
-		start := match[0]
-		end := len(content)
-		if i+1 < len(matches) {
-			end = matches[i+1][0]
-		}
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		lineLen := len(line) + 1 // +1 for the newline character
 
-		chunkText := strings.TrimSpace(content[start:end])
-		if chunkText == "" || len(chunkText) < 50 {
+		// If a single line itself is longer than targetChunkSize (e.g. minified line or massive string)
+		if lineLen > targetChunkSize {
+			// If we have accumulated lines, flush them first
+			if len(currentChunkLines) > 0 {
+				chunks = append(chunks, CodeChunk{
+					FilePath: filePath,
+					Content:  strings.Join(currentChunkLines, "\n"),
+					ChunkID:  fmt.Sprintf("%s::%d", filePath, chunkIdx),
+				})
+				chunkIdx++
+				currentChunkLines = nil
+				currentChunkLen = 0
+			}
+
+			// Split this massive line into character chunks of targetChunkSize
+			runes := []rune(line)
+			for start := 0; start < len(runes); start += targetChunkSize - overlapSize {
+				end := start + targetChunkSize
+				if end > len(runes) {
+					end = len(runes)
+				}
+				chunkText := string(runes[start:end])
+				chunks = append(chunks, CodeChunk{
+					FilePath: filePath,
+					Content:  chunkText,
+					ChunkID:  fmt.Sprintf("%s::%d", filePath, chunkIdx),
+				})
+				chunkIdx++
+				if end == len(runes) {
+					break
+				}
+			}
 			continue
 		}
 
-		chunks = append(chunks, CodeChunk{
-			FilePath: filePath,
-			Content:  chunkText,
-			ChunkID:  fmt.Sprintf("%s::%d", filePath, i),
-		})
-	}
-	return chunks
-}
+		// If adding this line would exceed our target chunk size
+		if currentChunkLen+lineLen > targetChunkSize && len(currentChunkLines) > 0 {
+			// Save the current chunk
+			chunks = append(chunks, CodeChunk{
+				FilePath: filePath,
+				Content:  strings.Join(currentChunkLines, "\n"),
+				ChunkID:  fmt.Sprintf("%s::%d", filePath, chunkIdx),
+			})
+			chunkIdx++
 
-func splitByNewlines(content string, filePath string) []CodeChunk {
-	var chunks []CodeChunk
-	parts := strings.Split(content, "\n\n")
-	for i, part := range parts {
-		if len(strings.TrimSpace(part)) < 100 {
-			continue
+			// Backtrack to create overlap
+			var overlapLines []string
+			overlapLen := 0
+			for j := len(currentChunkLines) - 1; j >= 0; j-- {
+				l := currentChunkLines[j]
+				lLen := len(l) + 1
+				// Always include at least one line for overlap, but check if we exceed overlapSize
+				if len(overlapLines) > 0 && overlapLen+lLen > overlapSize {
+					break
+				}
+				overlapLines = append([]string{l}, overlapLines...)
+				overlapLen += lLen
+			}
+
+			currentChunkLines = overlapLines
+			currentChunkLen = overlapLen
 		}
+
+		currentChunkLines = append(currentChunkLines, line)
+		currentChunkLen += lineLen
+	}
+
+	// Flush any remaining lines
+	if len(currentChunkLines) > 0 {
 		chunks = append(chunks, CodeChunk{
 			FilePath: filePath,
-			Content:  strings.TrimSpace(part),
-			ChunkID:  fmt.Sprintf("%s::%d", filePath, i),
+			Content:  strings.Join(currentChunkLines, "\n"),
+			ChunkID:  fmt.Sprintf("%s::%d", filePath, chunkIdx),
 		})
 	}
-	return chunks
 
+	return chunks
 }
 
 func PrintSampleChunks(chunks []CodeChunk, limit int) {
