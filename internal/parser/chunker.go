@@ -20,11 +20,14 @@ var allowedExtentions = map[string]bool{
 	".go": true, ".js": true, ".ts": true, ".py": true, ".rs": true, ".java": true,
 	".md": true, ".txt": true, ".json": true, ".yaml": true, ".yml": true,
 	".css": true, ".html": true, ".sql": true, ".sh": true,
+	".cpp": true, ".c": true, ".cs": true, ".php": true, ".swift": true, ".kt": true, ".dart": true, ".scala": true, ".lua": true,
+	".rb": true, ".pl": true, ".r": true, ".jl": true, ".hs": true, ".erl": true, ".ex": true, ".exs": true,
 }
 
 var ignoreDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "__pycache__": true,
-	".venv": true, "dist": true, "build": true, ".next": true, ".idea": true,
+	".venv": true, "dist": true, "build": true, ".next": true, ".idea": true, ".vite": true,
+	"out": true, "bin": true, "obj": true, "target": true, "logs": true, "tmp": true, "temp": true,
 }
 
 var splitRegex = regexp.MustCompile(`(?m)^(func |class |def |export |async |interface |struct |const |let |var )`)
