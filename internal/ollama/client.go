@@ -11,6 +11,8 @@ import (
 
 const OllamaBaseURL = "http://localhost:11434"
 
+const EmbedModel = "nomic-embed-text:v1.5"
+
 type EmbedRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
@@ -22,7 +24,7 @@ type EmbedResponse struct {
 
 func GetEmbedding(text string) ([]float64, error) {
 	reqBody := EmbedRequest{
-		Model:  "nomic-embed-text:v1.5",
+		Model:  EmbedModel,
 		Prompt: text,
 	}
 

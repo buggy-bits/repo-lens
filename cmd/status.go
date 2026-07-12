@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +15,22 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check Ollama connection and index status",
 	Run: func(cmd *cobra.Command, args []string) {
+		if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
+			result := checkSystem().(statusResult)
+			if result.err != nil {
+				fmt.Printf("Error: %v\n", result.err)
+				os.Exit(1)
+			}
+			fmt.Println("\nRepo Lens Status")
+			fmt.Printf("   Ollama API: %s\n", checkmark(result.ollamaOK))
+			fmt.Printf("   Models (llama3, nomic-embed-text): %s\n", checkmark(result.modelsOK))
+			fmt.Printf("   Vector store (vector_store.json): %s\n", checkmark(result.storeOK))
+			if result.storeOK {
+				fmt.Println("   → Ready to ask questions!")
+			}
+			return
+		}
+
 		// Show spinner while checking
 		s := spinner.New()
 		s.Spinner = spinner.Dot
