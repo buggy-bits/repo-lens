@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buggy-bits/repo-lens/internal/config"
 	"github.com/buggy-bits/repo-lens/internal/ollama"
 	"github.com/buggy-bits/repo-lens/internal/store"
 	"github.com/buggy-bits/repo-lens/internal/vector"
@@ -17,17 +18,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const topMatches = 3
-const chatModel = "qwen2.5:7b"
-const vectorStorePath = "vector_store.json"
+var (
+	askModelName  string
+	askTopResults int
+)
 
 var askCmd = &cobra.Command{
 	Use:   "ask [question]",
 	Short: "Query your indexed codebase using local AI",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if cmd.Flags().Changed("model") {
+			config.ActiveConfig.Model = askModelName
+		}
+		if cmd.Flags().Changed("top-results") {
+			config.ActiveConfig.TopResults = askTopResults
+		}
+
 		query := args[0]
-		if _, err := os.Stat(vectorStorePath); os.IsNotExist(err) {
+		if _, err := os.Stat(config.ActiveConfig.VectorStorePath); os.IsNotExist(err) {
 			fmt.Println("❌ No index found. Run 'lens ingest ./path' first.")
 			os.Exit(1)
 		}
@@ -52,7 +61,7 @@ var askCmd = &cobra.Command{
 
 		if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
 			fmt.Println("🔍 Searching vectors & fetching context...")
-			db, err := store.LoadStore(vectorStorePath)
+			db, err := store.LoadStore(config.ActiveConfig.VectorStorePath)
 			if err != nil {
 				fmt.Printf("❌ Error: %v\n", err)
 				os.Exit(1)
@@ -68,7 +77,7 @@ var askCmd = &cobra.Command{
 				os.Exit(1)
 			}
 
-			matches := vector.FindTopMatches(queryVec, db.Chunks, topMatches)
+			matches := vector.FindTopMatches(queryVec, db.Chunks, config.ActiveConfig.TopResults)
 			if len(matches) == 0 {
 				fmt.Println("❌ Error: no relevant chunks found")
 				os.Exit(1)
@@ -83,7 +92,7 @@ var askCmd = &cobra.Command{
 			fmt.Println("🧠 Thinking and generating response...")
 			started := time.Now()
 			var fullResponse strings.Builder
-			err = ollama.StreamChat(query, context, chatModel, func(token string) {
+			err = ollama.StreamChat(query, context, config.ActiveConfig.Model, func(token string) {
 				fullResponse.WriteString(token)
 			})
 			if err != nil {
@@ -197,7 +206,7 @@ type askResult struct {
 
 func runOnlyRetrieval(query string) tea.Cmd {
 	return func() tea.Msg {
-		db, err := store.LoadStore(vectorStorePath)
+		db, err := store.LoadStore(config.ActiveConfig.VectorStorePath)
 		if err != nil {
 			return retrievalResult{err: err}
 		}
@@ -210,7 +219,7 @@ func runOnlyRetrieval(query string) tea.Cmd {
 			return retrievalResult{err: fmt.Errorf("failed to embed query: %w", err)}
 		}
 
-		matches := vector.FindTopMatches(queryVec, db.Chunks, topMatches)
+		matches := vector.FindTopMatches(queryVec, db.Chunks, config.ActiveConfig.TopResults)
 		if len(matches) == 0 {
 			return retrievalResult{err: fmt.Errorf("no relevant chunks found")}
 		}
@@ -231,7 +240,7 @@ func runOnlyRetrieval(query string) tea.Cmd {
 func runLLMGeneration(query, context string) tea.Cmd {
 	return func() tea.Msg {
 		var fullResponse strings.Builder
-		err := ollama.StreamChat(query, context, chatModel, func(token string) {
+		err := ollama.StreamChat(query, context, config.ActiveConfig.Model, func(token string) {
 			fullResponse.WriteString(token)
 		})
 		if err != nil {
@@ -285,5 +294,7 @@ func (m askModel) View() string {
 }
 
 func init() {
+	askCmd.Flags().StringVarP(&askModelName, "model", "m", "", "LLM model name to use for answering")
+	askCmd.Flags().IntVarP(&askTopResults, "top-results", "k", 0, "number of top matching chunks to retrieve")
 	rootCmd.AddCommand(askCmd)
 }

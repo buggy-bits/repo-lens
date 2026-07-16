@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/buggy-bits/repo-lens/internal/config"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
@@ -23,8 +24,8 @@ var statusCmd = &cobra.Command{
 			}
 			fmt.Println("\nRepo Lens Status")
 			fmt.Printf("   Ollama API: %s\n", checkmark(result.ollamaOK))
-			fmt.Printf("   Models (llama3, nomic-embed-text): %s\n", checkmark(result.modelsOK))
-			fmt.Printf("   Vector store (vector_store.json): %s\n", checkmark(result.storeOK))
+			fmt.Printf("   Models (%s, %s): %s\n", config.ActiveConfig.Model, config.ActiveConfig.EmbeddingModel, checkmark(result.modelsOK))
+			fmt.Printf("   Vector store (%s): %s\n", config.ActiveConfig.VectorStorePath, checkmark(result.storeOK))
 			if result.storeOK {
 				fmt.Println("   → Ready to ask questions!")
 			}
@@ -101,8 +102,8 @@ func (m statusModel) View() string {
 
 	status := "\nRepo Lens Status\n"
 	status += fmt.Sprintf("   Ollama API: %s\n", checkmark(m.ollamaOK))
-	status += fmt.Sprintf("   Models (llama3, nomic-embed-text): %s\n", checkmark(m.modelsOK))
-	status += fmt.Sprintf("   Vector store (vector_store.json): %s\n", checkmark(m.storeOK))
+	status += fmt.Sprintf("   Models (%s, %s): %s\n", config.ActiveConfig.Model, config.ActiveConfig.EmbeddingModel, checkmark(m.modelsOK))
+	status += fmt.Sprintf("   Vector store (%s): %s\n", config.ActiveConfig.VectorStorePath, checkmark(m.storeOK))
 	if m.storeOK {
 		status += "   → Ready to ask questions!\n"
 	}
@@ -129,7 +130,7 @@ func checkSystem() tea.Msg {
 	result := statusResult{}
 
 	// 1. Ping Ollama API
-	resp, err := http.Get("http://localhost:11434/api/tags")
+	resp, err := http.Get(config.ActiveConfig.OllamaURL + "/api/tags")
 	if err != nil {
 		result.err = fmt.Errorf("Ollama not running: %w", err)
 		return result
@@ -142,8 +143,8 @@ func checkSystem() tea.Msg {
 	// For now, assume OK if API responded
 	result.modelsOK = result.ollamaOK
 
-	// 3. Check vector_store.json exists
-	if _, err := os.Stat("vector_store.json"); err == nil {
+	// 3. Check vector database exists
+	if _, err := os.Stat(config.ActiveConfig.VectorStorePath); err == nil {
 		result.storeOK = true
 	}
 

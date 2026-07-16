@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/buggy-bits/repo-lens/internal/config"
 	"github.com/buggy-bits/repo-lens/internal/ollama"
 	"github.com/buggy-bits/repo-lens/internal/parser"
 	"github.com/buggy-bits/repo-lens/internal/store"
@@ -14,11 +15,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	ingestEmbeddingModel string
+)
+
 var ingestCmd = &cobra.Command{
 	Use:   "ingest [directory]",
 	Short: "Scan & chunk a codebase for RAG indexing",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if cmd.Flags().Changed("embedding-model") {
+			config.ActiveConfig.EmbeddingModel = ingestEmbeddingModel
+		}
+
 		targetPath := args[0]
 		absPath, err := filepath.Abs(targetPath)
 		if err != nil {
@@ -129,7 +138,7 @@ func runIngestion(path string) tea.Cmd {
 			})
 		}
 		// Save to disk
-		if err := store.SaveStore(vectorStorePath, vectorStore); err != nil {
+		if err := store.SaveStore(config.ActiveConfig.VectorStorePath, vectorStore); err != nil {
 			return ingestResult{err: err}
 		}
 
@@ -139,5 +148,6 @@ func runIngestion(path string) tea.Cmd {
 }
 
 func init() {
+	ingestCmd.Flags().StringVarP(&ingestEmbeddingModel, "embedding-model", "e", "", "embedding model name to use for indexing")
 	rootCmd.AddCommand(ingestCmd)
 }

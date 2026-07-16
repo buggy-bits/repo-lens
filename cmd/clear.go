@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/buggy-bits/repo-lens/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,7 @@ var clearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Delete vector_store.json and reset the index",
 	Run: func(cmd *cobra.Command, args []string) {
-		if _, err := os.Stat(vectorStorePath); os.IsNotExist(err) {
+		if _, err := os.Stat(config.ActiveConfig.VectorStorePath); os.IsNotExist(err) {
 			fmt.Println("No vector store found. Nothing to clear.")
 			return
 		}
@@ -28,7 +29,7 @@ var clearCmd = &cobra.Command{
 			return
 		}
 
-		if err := os.Remove(vectorStorePath); err != nil {
+		if err := os.Remove(config.ActiveConfig.VectorStorePath); err != nil {
 			fmt.Printf("Failed to delete store: %v\n", err)
 			os.Exit(1)
 		}

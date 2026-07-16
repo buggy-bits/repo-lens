@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/buggy-bits/repo-lens/internal/config"
 )
-
-const OllamaBaseURL = "http://localhost:11434"
-
-const EmbedModel = "nomic-embed-text:v1.5"
 
 type EmbedRequest struct {
 	Model  string `json:"model"`
@@ -24,7 +22,7 @@ type EmbedResponse struct {
 
 func GetEmbedding(text string) ([]float64, error) {
 	reqBody := EmbedRequest{
-		Model:  EmbedModel,
+		Model:  config.ActiveConfig.EmbeddingModel,
 		Prompt: text,
 	}
 
@@ -32,7 +30,7 @@ func GetEmbedding(text string) ([]float64, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Post(OllamaBaseURL+"/api/embeddings", "application/json", bytes.NewBuffer(jsonBytes))
+	resp, err := http.Post(config.ActiveConfig.OllamaURL+"/api/embeddings", "application/json", bytes.NewBuffer(jsonBytes))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to reach Ollama: %w", err)
@@ -87,7 +85,7 @@ Answer concisely with code examples where helpful:`, context, query)
 	}
 
 	jsonBytes, _ := json.Marshal(reqBody)
-	resp, err := http.Post(OllamaBaseURL+"/api/chat", "application/json", bytes.NewBuffer(jsonBytes))
+	resp, err := http.Post(config.ActiveConfig.OllamaURL+"/api/chat", "application/json", bytes.NewBuffer(jsonBytes))
 	if err != nil {
 		return fmt.Errorf("failed to reach Ollama: %w", err)
 	}
