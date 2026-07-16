@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/buggy-bits/repo-lens/internal/config"
@@ -12,14 +13,14 @@ import (
 
 var clearCmd = &cobra.Command{
 	Use:   "clear",
-	Short: "Delete vector_store.json and reset the index",
+	Short: "Delete vector store and reset the index",
 	Run: func(cmd *cobra.Command, args []string) {
 		if _, err := os.Stat(config.ActiveConfig.VectorStorePath); os.IsNotExist(err) {
 			fmt.Println("No vector store found. Nothing to clear.")
 			return
 		}
 
-		fmt.Print("This will delete vector_store.json and remove all indexed data. Continue? (y/N): ")
+		fmt.Printf("This will delete %s and remove all indexed data. Continue? (y/N): ", filepath.Base(config.ActiveConfig.VectorStorePath))
 		reader := bufio.NewReader(os.Stdin)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))

@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
 type VectorChunk struct {
@@ -17,6 +18,10 @@ type VectorStore struct {
 }
 
 func SaveStore(path string, store *VectorStore) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err

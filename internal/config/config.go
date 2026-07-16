@@ -4,22 +4,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Mode                 string `yaml:"mode"`
-	Model                string `yaml:"model"`
-	EmbeddingModel       string `yaml:"embedding_model"`
-	TopResults           int    `yaml:"top_results"`
-	VectorStorePath      string `yaml:"vector_store_path"`
-	OllamaURL            string `yaml:"ollama_url"`
-	OnlineProvider       string `yaml:"online_provider"`
-	OnlineAPIKey         string `yaml:"online_api_key"`
-	OnlineAPIBase        string `yaml:"online_api_base"`
-	OnlineModel          string `yaml:"online_model"`
-	OnlineEmbeddingModel string `yaml:"online_embedding_model"`
+	Mode                 string            `yaml:"mode"`
+	Model                string            `yaml:"model"`
+	EmbeddingModel       string            `yaml:"embedding_model"`
+	TopResults           int               `yaml:"top_results"`
+	VectorStorePath      string            `yaml:"vector_store_path"`
+	OllamaURL            string            `yaml:"ollama_url"`
+	OnlineProvider       string            `yaml:"online_provider"`
+	OnlineAPIKey         string            `yaml:"online_api_key"`
+	OnlineAPIBase        string            `yaml:"online_api_base"`
+	OnlineModel          string            `yaml:"online_model"`
+	OnlineEmbeddingModel string            `yaml:"online_embedding_model"`
+	APIKeys              map[string]string `yaml:"api_keys"`
 }
 
 var ActiveConfig = &Config{
@@ -34,6 +36,14 @@ var ActiveConfig = &Config{
 	OnlineAPIBase:        "",
 	OnlineModel:          "gpt-4o",
 	OnlineEmbeddingModel: "text-embedding-3-small",
+	APIKeys:              make(map[string]string),
+}
+
+func init() {
+	cacheDir, err := os.UserCacheDir()
+	if err == nil {
+		ActiveConfig.VectorStorePath = filepath.Join(cacheDir, "repo-lens", "vector_store.json")
+	}
 }
 
 const DefaultConfigTemplate = `# Repo Lens Configuration File
@@ -75,6 +85,12 @@ online_model: "gpt-4o"
 
 # Embedding model name to use in online mode
 online_embedding_model: "text-embedding-3-small"
+
+# API keys for online providers 
+api_keys:
+  openai: ""
+  gemini: ""
+  anthropic: ""
 `
 
 // DefaultConfigPath returns the default configuration path under UserConfigDir.
@@ -106,7 +122,13 @@ func LoadConfig(customPath string) (*Config, error) {
 			return nil, fmt.Errorf("failed to create config directory %s: %w", dir, err)
 		}
 
-		if err := os.WriteFile(path, []byte(DefaultConfigTemplate), 0644); err != nil {
+		// Dynamically replace vector store path default comment and value
+		defaultPath := ActiveConfig.VectorStorePath
+		// Convert backslashes to forward slashes for cross-platform yaml path compatibility
+		yamlPath := filepath.ToSlash(defaultPath)
+		configTemplate := strings.Replace(DefaultConfigTemplate, "vector_store_path: \"vector_store.json\"", fmt.Sprintf("vector_store_path: %q", yamlPath), 1)
+
+		if err := os.WriteFile(path, []byte(configTemplate), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write default config file: %w", err)
 		}
 	}
@@ -123,4 +145,23 @@ func LoadConfig(customPath string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// SaveConfig writes the configuration back to config.yaml.
+func SaveConfig(cfg *Config, customPath string) error {
+	path := customPath
+	var err error
+	if path == "" {
+		path, err = DefaultConfigPath()
+		if err != nil {
+			return fmt.Errorf("failed to get user config directory: %w", err)
+		}
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to yaml: %w", err)
+	}
+
+	return os.WriteFile(path, data, 0644)
 }
