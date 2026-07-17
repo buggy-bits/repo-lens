@@ -20,7 +20,12 @@ The content of each valid file is split into semantic blocks using a sliding win
 ### Querying & Retrieval
 When asking a question via `lens ask`, the tool embeds your prompt and calculates the cosine similarity score between the prompt's vector and the database vectors. The top `N` matched code chunks are extracted, formatted alongside file locations, and injected into a custom prompt template. This context-enriched prompt is then sent to the local Ollama chat model (`qwen2.5:7b` by default) to generate and stream the final answer to your terminal with syntax highlighting.
 
- 
+ ## Screenshots
+
+<div align="center">
+  <img src="images/screenshots/in_action.png"  alt="Repo Lens in action"/>
+  
+</div>
 
 ## Project Architecture
 
